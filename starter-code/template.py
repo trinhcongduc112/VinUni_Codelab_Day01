@@ -13,6 +13,10 @@ import os
 import time
 from typing import Any, Callable
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ---------------------------------------------------------------------------
 # Estimated costs per 1M INPUT & OUTPUT tokens (USD) as of March 2026
 # Vietnamese text generally consumes ~1.5x - 2.0x more tokens than English due to Unicode/diacritics.
@@ -67,7 +71,23 @@ def call_openai(
     """
     # TODO: Import OpenAI, instantiate client, call chat.completions.create with parameters,
     #       measure execution start/end time, extract text and token usage, and return them.
-    raise NotImplementedError("Implement call_openai")
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    start = time.time()
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+    latency = time.time() - start
+    text = response.choices[0].message.content
+    usage = {
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens,
+    }
+    return text, latency, usage
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +135,27 @@ def call_gemini(
     """
     # TODO: Initialize Gemini client, set config parameters, call generate_content,
     #       measure latency, extract response text and usage metadata, and return the tuple.
-    raise NotImplementedError("Implement call_gemini")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_tokens,
+    )
+    start = time.time()
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=config,
+    )
+    latency = time.time() - start
+    text = response.text
+    usage = {
+        "input_tokens": response.usage_metadata.prompt_token_count,
+        "output_tokens": response.usage_metadata.candidates_token_count
+    }
+    return text, latency, usage
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +241,29 @@ def streaming_chatbot() -> None:
         - Keep history limited to the last 3 turns to optimize context window and costs.
     """
     # TODO: Setup interactive session, prompt user for input, stream response, and update history.
-    raise NotImplementedError("Implement streaming_chatbot")
+    from google import genai
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    history = []
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() in ("quit", "exit"):
+            break
+        if not user_input:
+            continue
+        history.append({"role": "user", "parts": [{"text": user_input}]})
+        response_stream = client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=history,
+        )
+        print("Gemini: ", end="", flush=True)
+        reply = ""
+        for chunk in response_stream:
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                reply += chunk.text
+        print()
+        history.append({"role": "model", "parts": [{"text": reply}]})
+        history = history[-6:]
 
 
 # ---------------------------------------------------------------------------
